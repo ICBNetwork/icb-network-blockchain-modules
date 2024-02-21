@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 )
 
 type eventManager struct {

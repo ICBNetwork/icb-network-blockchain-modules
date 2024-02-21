@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 )
 
 var (

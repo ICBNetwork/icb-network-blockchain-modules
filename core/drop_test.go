@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages"
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 
 	"github.com/stretchr/testify/assert"
 )

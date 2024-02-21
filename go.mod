@@ -1,4 +1,4 @@
-module github.com/ICBNetwork/icb-network-blockchain-modules
+module github.com/ICBNetwork/icb-network-blockchain-modules/v2
 
 go 1.19
 

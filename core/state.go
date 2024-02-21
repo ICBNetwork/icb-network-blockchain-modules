@@ -3,8 +3,8 @@ package core
 import (
 	"sync"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages"
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 )
 
 type stateType uint8

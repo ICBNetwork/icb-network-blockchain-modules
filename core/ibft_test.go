@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages"
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 )
 
 func proposalMatches(proposal *proto.Proposal, message *proto.Message) bool {

@@ -3,7 +3,7 @@ package messages
 import (
 	"sync"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 )
 
 // Messages contains the relevant messages for each view (height, round)

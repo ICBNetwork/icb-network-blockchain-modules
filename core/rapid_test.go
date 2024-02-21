@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"pgregory.net/rapid"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages"
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages"
+	"github.com/ICBNetwork/icb-network-blockchain-modules/v2/messages/proto"
 )
 
 // roundMessage contains message data within consensus round

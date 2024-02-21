@@ -82,7 +82,7 @@ linters-settings:
     numbers: true
 
   goimports:
-    local-prefixes: github.com/ICBNetwork/icb-network-blockchain-modules
+    local-prefixes: github.com/ICBNetwork/icb-network-blockchain-modules/v2
                     github.com/armon/go-metrics
     
 
