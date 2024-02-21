@@ -1,0 +1,10 @@
+build/
+dist/
+
+# MacOS Leftovers
+.DS_Store
+.vscode
+.idea
+
+# Rapid Framework Leftovers
+testdata/
