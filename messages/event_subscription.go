@@ -45,7 +45,6 @@ func (es *eventSubscription) runLoop() {
 func (es *eventSubscription) eventSupported(
 	messageType proto.MessageType,
 	view *proto.View,
-	totalMessages int,
 ) bool {
 	// The heights must match
 	if view.Height != es.details.View.Height {
@@ -66,22 +65,15 @@ func (es *eventSubscription) eventSupported(
 	}
 
 	// The type of message must match
-	if messageType != es.details.MessageType {
-		return false
-	}
-
-	// The total number of messages must be
-	// greater of equal to the subscription threshold
-	return totalMessages >= es.details.MinNumMessages
+	return messageType == es.details.MessageType
 }
 
 // pushEvent sends the event off for processing by the subscription. [NON-BLOCKING]
 func (es *eventSubscription) pushEvent(
 	messageType proto.MessageType,
 	view *proto.View,
-	totalMessages int,
 ) {
-	if !es.eventSupported(messageType, view, totalMessages) {
+	if !es.eventSupported(messageType, view) {
 		return
 	}
 

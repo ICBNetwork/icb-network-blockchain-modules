@@ -1,9 +1,11 @@
 package messages
 
 import (
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 )
 
 func TestEventManager_SubscribeCancel(t *testing.T) {
@@ -47,7 +49,7 @@ func TestEventManager_SubscribeCancel(t *testing.T) {
 
 	go func() {
 		for {
-			em.signalEvent(baseDetails.MessageType, baseDetails.View, baseDetails.MinNumMessages)
+			em.signalEvent(baseDetails.MessageType, baseDetails.View)
 
 			select {
 			case <-quitCh:

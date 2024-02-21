@@ -1,10 +1,13 @@
+// Package messages defines a sub-module to handle IBFT messages
 package messages
 
 import (
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
-	"github.com/google/uuid"
 	"sync"
 	"sync/atomic"
+
+	"github.com/google/uuid"
+
+	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 )
 
 type eventManager struct {
@@ -20,6 +23,7 @@ func newEventManager() *eventManager {
 	}
 }
 
+// SubscriptionID is a unique number to identify Subscription
 type SubscriptionID int32
 
 // Subscription is the subscription
@@ -106,7 +110,6 @@ func (em *eventManager) close() {
 func (em *eventManager) signalEvent(
 	messageType proto.MessageType,
 	view *proto.View,
-	totalMessages int,
 ) {
 	if atomic.LoadInt64(&em.numSubscriptions) == 0 {
 		// No reason to lock the subscriptions map
@@ -121,7 +124,6 @@ func (em *eventManager) signalEvent(
 		subscription.pushEvent(
 			messageType,
 			view,
-			totalMessages,
 		)
 	}
 }

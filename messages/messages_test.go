@@ -1,11 +1,14 @@
 package messages
 
 import (
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
-	"github.com/stretchr/testify/assert"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
+
+	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 )
 
 // generateRandomMessages generates random messages for the
@@ -51,6 +54,10 @@ func generateRandomMessages(
 	}
 
 	return messages
+}
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }
 
 // TestMessages_AddMessage tests if the message addition
@@ -212,8 +219,10 @@ func TestMessages_GetValidMessagesMessage(t *testing.T) {
 
 	for _, testCase := range testTable {
 		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
+
 			// Add the initial message set
 			messages := NewMessages()
 			defer messages.Close()
@@ -256,6 +265,67 @@ func TestMessages_GetValidMessagesMessage(t *testing.T) {
 			)
 		})
 	}
+}
+
+// TestMessages_GetExtendedRCC makes sure
+// Messages returns the ROUND-CHANGE messages for the highest round
+// where all messages are valid
+func TestMessages_GetExtendedRCC(t *testing.T) {
+	t.Parallel()
+
+	var (
+		height uint64 = 0
+		quorum        = 5
+	)
+
+	messages := NewMessages()
+	defer messages.Close()
+
+	// Generate round messages
+	randomMessages := map[uint64][]*proto.Message{
+		0: generateRandomMessages(quorum-1, &proto.View{
+			Height: height,
+			Round:  0,
+		}, proto.MessageType_ROUND_CHANGE),
+
+		1: generateRandomMessages(quorum, &proto.View{
+			Height: height,
+			Round:  1,
+		}, proto.MessageType_ROUND_CHANGE),
+
+		2: generateRandomMessages(quorum, &proto.View{
+			Height: height,
+			Round:  2,
+		}, proto.MessageType_ROUND_CHANGE),
+
+		3: generateRandomMessages(quorum-1, &proto.View{
+			Height: height,
+			Round:  3,
+		}, proto.MessageType_ROUND_CHANGE),
+	}
+
+	// Add the messages
+	for _, roundMessages := range randomMessages {
+		for _, message := range roundMessages {
+			messages.AddMessage(message)
+		}
+	}
+
+	extendedRCC := messages.GetExtendedRCC(
+		height,
+		func(message *proto.Message) bool {
+			return true
+		},
+		func(round uint64, messages []*proto.Message) bool {
+			return len(messages) >= quorum
+		},
+	)
+
+	assert.ElementsMatch(
+		t,
+		randomMessages[2],
+		extendedRCC,
+	)
 }
 
 // TestMessages_GetMostRoundChangeMessages makes sure
@@ -319,9 +389,8 @@ func TestMessages_EventManager(t *testing.T) {
 
 	// Create the subscription
 	subscription := messages.Subscribe(SubscriptionDetails{
-		MessageType:    messageType,
-		View:           baseView,
-		MinNumMessages: numMessages,
+		MessageType: messageType,
+		View:        baseView,
 	})
 
 	defer messages.Unsubscribe(subscription.ID)
@@ -330,6 +399,7 @@ func TestMessages_EventManager(t *testing.T) {
 	randomMessages := generateRandomMessages(numMessages, baseView, messageType)
 	for _, message := range randomMessages {
 		messages.AddMessage(message)
+		messages.SignalEvent(message.Type, message.View)
 	}
 
 	// Wait for the subscription event to happen

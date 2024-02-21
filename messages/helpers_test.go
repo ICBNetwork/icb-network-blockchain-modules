@@ -3,44 +3,84 @@ package messages
 import (
 	"testing"
 
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 )
 
 func TestMessages_ExtractCommittedSeals(t *testing.T) {
 	t.Parallel()
 
-	signer := []byte("signer")
-	committedSeal := []byte("committed seal")
+	var (
+		committedSeal = []byte("committed seal")
+	)
 
-	commitMessage := &proto.Message{
-		Type: proto.MessageType_COMMIT,
-		Payload: &proto.Message_CommitData{
-			CommitData: &proto.CommitMessage{
-				CommittedSeal: committedSeal,
+	createCommitMessage := func(signer string) *proto.Message {
+		return &proto.Message{
+			Type: proto.MessageType_COMMIT,
+			Payload: &proto.Message_CommitData{
+				CommitData: &proto.CommitMessage{
+					CommittedSeal: committedSeal,
+				},
 			},
+			From: []byte(signer),
+		}
+	}
+
+	createWrongMessage := func(signer string, msgType proto.MessageType) *proto.Message {
+		return &proto.Message{
+			Type: msgType,
+		}
+	}
+
+	createCommittedSeal := func(from string) *CommittedSeal {
+		return &CommittedSeal{
+			Signer:    []byte(from),
+			Signature: committedSeal,
+		}
+	}
+
+	tests := []struct {
+		name     string
+		messages []*proto.Message
+		expected []*CommittedSeal
+		err      error
+	}{
+		{
+			name: "contains only valid COMMIT messages",
+			messages: []*proto.Message{
+				createCommitMessage("signer1"),
+				createCommitMessage("signer2"),
+			},
+			expected: []*CommittedSeal{
+				createCommittedSeal("signer1"),
+				createCommittedSeal("signer2"),
+			},
+			err: nil,
 		},
-		From: signer,
-	}
-	invalidMessage := &proto.Message{
-		Type: proto.MessageType_PREPARE,
-	}
-
-	seals := ExtractCommittedSeals([]*proto.Message{
-		commitMessage,
-		invalidMessage,
-	})
-
-	if len(seals) != 1 {
-		t.Fatalf("Seals not extracted")
+		{
+			name: "contains wrong type messages",
+			messages: []*proto.Message{
+				createCommitMessage("signer1"),
+				createWrongMessage("signer2", proto.MessageType_PREPREPARE),
+			},
+			expected: nil,
+			err:      ErrWrongCommitMessageType,
+		},
 	}
 
-	expected := &CommittedSeal{
-		Signer:    signer,
-		Signature: committedSeal,
-	}
+	for _, test := range tests {
+		test := test
 
-	assert.Equal(t, expected, seals[0])
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			seals, err := ExtractCommittedSeals(test.messages)
+
+			assert.Equal(t, test.expected, seals)
+			assert.Equal(t, test.err, err)
+		})
+	}
 }
 
 func TestMessages_ExtractCommitHash(t *testing.T) {
@@ -92,11 +132,11 @@ func TestMessages_ExtractCommitHash(t *testing.T) {
 func TestMessages_ExtractProposal(t *testing.T) {
 	t.Parallel()
 
-	proposal := []byte("proposal")
+	proposal := &proto.Proposal{}
 
 	testTable := []struct {
 		name             string
-		expectedProposal []byte
+		expectedProposal *proto.Proposal
 		message          *proto.Message
 	}{
 		{
@@ -327,21 +367,21 @@ func TestMessages_ExtractLatestPC(t *testing.T) {
 func TestMessages_ExtractLPPB(t *testing.T) {
 	t.Parallel()
 
-	latestPPB := []byte("latest block")
+	lastPreparedProposal := &proto.Proposal{}
 
 	testTable := []struct {
 		name         string
-		expectedLPPB []byte
+		expectedLPPB *proto.Proposal
 		message      *proto.Message
 	}{
 		{
 			"valid message",
-			latestPPB,
+			lastPreparedProposal,
 			&proto.Message{
 				Type: proto.MessageType_ROUND_CHANGE,
 				Payload: &proto.Message_RoundChangeData{
 					RoundChangeData: &proto.RoundChangeMessage{
-						LastPreparedProposedBlock: latestPPB,
+						LastPreparedProposal: lastPreparedProposal,
 					},
 				},
 			},
@@ -364,7 +404,7 @@ func TestMessages_ExtractLPPB(t *testing.T) {
 			assert.Equal(
 				t,
 				testCase.expectedLPPB,
-				ExtractLastPreparedProposedBlock(testCase.message),
+				ExtractLastPreparedProposal(testCase.message),
 			)
 		})
 	}

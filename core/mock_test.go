@@ -2,19 +2,50 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"math/big"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ICBNetwork/icb-network-blockchain-modules/messages"
 	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 )
 
+const (
+	testRoundTimeout = time.Second
+)
+
+var (
+	correctRoundMessage = newCorrectRoundMessage(0)
+
+	badRoundMessage = roundMessage{
+		proposal: &proto.Proposal{
+			RawProposal: []byte("bad"),
+			Round:       100,
+		},
+		hash: []byte("bad proposal hash"),
+		seal: []byte("bad seal"),
+	}
+)
+
+func newCorrectRoundMessage(round uint64) roundMessage {
+	return roundMessage{
+		proposal: &proto.Proposal{
+			RawProposal: validEthereumBlock,
+			Round:       round,
+		},
+		hash: []byte("proposal hash"),
+		seal: []byte("seal"),
+	}
+}
+
 // Define delegation methods
 type isValidBlockDelegate func([]byte) bool
-type isValidSenderDelegate func(*proto.Message) bool
+type IsValidValidatorDelegate func(*proto.Message) bool
 type isProposerDelegate func([]byte, uint64, uint64) bool
-type buildProposalDelegate func(uint64) []byte
-type isValidProposalHashDelegate func([]byte, []byte) bool
+type buildEthereumBlockDelegate func(uint64) []byte
+type isValidProposalHashDelegate func(*proto.Proposal, []byte) bool
 type isValidCommittedSealDelegate func([]byte, *messages.CommittedSeal) bool
 
 type buildPrePrepareMessageDelegate func(
@@ -25,22 +56,23 @@ type buildPrePrepareMessageDelegate func(
 type buildPrepareMessageDelegate func([]byte, *proto.View) *proto.Message
 type buildCommitMessageDelegate func([]byte, *proto.View) *proto.Message
 type buildRoundChangeMessageDelegate func(
-	[]byte,
+	*proto.Proposal,
 	*proto.PreparedCertificate,
 	*proto.View,
 ) *proto.Message
 
-type quorumDelegate func(blockHeight uint64) uint64
-type insertBlockDelegate func([]byte, []*messages.CommittedSeal)
+type insertProposalDelegate func(*proto.Proposal, []*messages.CommittedSeal)
 type idDelegate func() []byte
-type maximumFaultyNodesDelegate func() uint64
+type getVotingPowerDelegate func(uint64) (map[string]*big.Int, error)
+
+var _ Backend = &mockBackend{}
 
 // mockBackend is the mock backend structure that is configurable
 type mockBackend struct {
-	isValidBlockFn         isValidBlockDelegate
-	isValidSenderFn        isValidSenderDelegate
+	isValidProposalFn      isValidBlockDelegate
+	IsValidValidatorFn     IsValidValidatorDelegate
 	isProposerFn           isProposerDelegate
-	buildProposalFn        buildProposalDelegate
+	buildProposalFn        buildEthereumBlockDelegate
 	isValidProposalHashFn  isValidProposalHashDelegate
 	isValidCommittedSealFn isValidCommittedSealDelegate
 
@@ -48,10 +80,9 @@ type mockBackend struct {
 	buildPrepareMessageFn     buildPrepareMessageDelegate
 	buildCommitMessageFn      buildCommitMessageDelegate
 	buildRoundChangeMessageFn buildRoundChangeMessageDelegate
-	quorumFn                  quorumDelegate
-	insertBlockFn             insertBlockDelegate
+	insertProposalFn          insertProposalDelegate
 	idFn                      idDelegate
-	maximumFaultyNodesFn      maximumFaultyNodesDelegate
+	getVotingPowerFn          getVotingPowerDelegate
 }
 
 func (m mockBackend) ID() []byte {
@@ -62,31 +93,23 @@ func (m mockBackend) ID() []byte {
 	return nil
 }
 
-func (m mockBackend) InsertBlock(proposal []byte, committedSeals []*messages.CommittedSeal) {
-	if m.insertBlockFn != nil {
-		m.insertBlockFn(proposal, committedSeals)
+func (m mockBackend) InsertProposal(proposal *proto.Proposal, committedSeals []*messages.CommittedSeal) {
+	if m.insertProposalFn != nil {
+		m.insertProposalFn(proposal, committedSeals)
 	}
 }
 
-func (m mockBackend) Quorum(blockNumber uint64) uint64 {
-	if m.quorumFn != nil {
-		return m.quorumFn(blockNumber)
-	}
-
-	return 0
-}
-
-func (m mockBackend) IsValidBlock(block []byte) bool {
-	if m.isValidBlockFn != nil {
-		return m.isValidBlockFn(block)
+func (m mockBackend) IsValidProposal(proposal []byte) bool {
+	if m.isValidProposalFn != nil {
+		return m.isValidProposalFn(proposal)
 	}
 
 	return true
 }
 
-func (m mockBackend) IsValidSender(msg *proto.Message) bool {
-	if m.isValidSenderFn != nil {
-		return m.isValidSenderFn(msg)
+func (m mockBackend) IsValidValidator(msg *proto.Message) bool {
+	if m.IsValidValidatorFn != nil {
+		return m.IsValidValidatorFn(msg)
 	}
 
 	return true
@@ -100,15 +123,15 @@ func (m mockBackend) IsProposer(id []byte, sequence, round uint64) bool {
 	return false
 }
 
-func (m mockBackend) BuildProposal(blockNumber uint64) []byte {
+func (m mockBackend) BuildProposal(view *proto.View) []byte {
 	if m.buildProposalFn != nil {
-		return m.buildProposalFn(blockNumber)
+		return m.buildProposalFn(view.Height)
 	}
 
 	return nil
 }
 
-func (m mockBackend) IsValidProposalHash(proposal, hash []byte) bool {
+func (m mockBackend) IsValidProposalHash(proposal *proto.Proposal, hash []byte) bool {
 	if m.isValidProposalHashFn != nil {
 		return m.isValidProposalHashFn(proposal, hash)
 	}
@@ -124,21 +147,13 @@ func (m mockBackend) IsValidCommittedSeal(proposal []byte, committedSeal *messag
 	return true
 }
 
-func (m mockBackend) MaximumFaultyNodes() uint64 {
-	if m.maximumFaultyNodesFn != nil {
-		return m.maximumFaultyNodesFn()
-	}
-
-	return 0
-}
-
 func (m mockBackend) BuildPrePrepareMessage(
-	proposal []byte,
+	rawProposal []byte,
 	certificate *proto.RoundChangeCertificate,
 	view *proto.View,
 ) *proto.Message {
 	if m.buildPrePrepareMessageFn != nil {
-		return m.buildPrePrepareMessageFn(proposal, certificate, view)
+		return m.buildPrePrepareMessageFn(rawProposal, certificate, view)
 	}
 
 	return nil
@@ -161,7 +176,7 @@ func (m mockBackend) BuildCommitMessage(proposalHash []byte, view *proto.View) *
 }
 
 func (m mockBackend) BuildRoundChangeMessage(
-	proposal []byte,
+	proposal *proto.Proposal,
 	certificate *proto.PreparedCertificate,
 	view *proto.View,
 ) *proto.Message {
@@ -177,6 +192,14 @@ func (m mockBackend) BuildRoundChangeMessage(
 		Type:    proto.MessageType_ROUND_CHANGE,
 		Payload: nil,
 	}
+}
+
+func (m mockBackend) GetVotingPowers(height uint64) (map[string]*big.Int, error) {
+	if m.getVotingPowerFn != nil {
+		return m.getVotingPowerFn(height)
+	}
+
+	return map[string]*big.Int{}, nil
 }
 
 // Define delegation methods
@@ -224,11 +247,17 @@ func (l mockLogger) Error(msg string, args ...interface{}) {
 type mockMessages struct {
 	addMessageFn    func(message *proto.Message)
 	pruneByHeightFn func(height uint64)
+	signalEventFn   func(messageType proto.MessageType, messageView *proto.View)
 
 	getValidMessagesFn func(
 		view *proto.View,
 		messageType proto.MessageType,
 		isValid func(message *proto.Message) bool,
+	) []*proto.Message
+	getExtendedRCCFn func(
+		height uint64,
+		isValidMessage func(message *proto.Message) bool,
+		isValidRCC func(round uint64, messages []*proto.Message) bool,
 	) []*proto.Message
 	getMostRoundChangeMessagesFn func(uint64, uint64) []*proto.Message
 
@@ -274,6 +303,24 @@ func (m mockMessages) PruneByHeight(height uint64) {
 	}
 }
 
+func (m mockMessages) SignalEvent(msgType proto.MessageType, view *proto.View) {
+	if m.signalEventFn != nil {
+		m.signalEventFn(msgType, view)
+	}
+}
+
+func (m mockMessages) GetExtendedRCC(
+	height uint64,
+	isValidMessage func(message *proto.Message) bool,
+	isValidRCC func(round uint64, messages []*proto.Message) bool,
+) []*proto.Message {
+	if m.getExtendedRCCFn != nil {
+		return m.getExtendedRCCFn(height, isValidMessage, isValidRCC)
+	}
+
+	return nil
+}
+
 func (m mockMessages) GetMostRoundChangeMessages(round, height uint64) []*proto.Message {
 	if m.getMostRoundChangeMessagesFn != nil {
 		return m.getMostRoundChangeMessagesFn(round, height)
@@ -288,20 +335,47 @@ type transportConfigCallback func(*mockTransport)
 
 // newMockCluster creates a new IBFT cluster
 func newMockCluster(
-	numNodes int,
-	backendCallbackMap map[int]backendConfigCallback,
-	loggerCallbackMap map[int]loggerConfigCallback,
-	transportCallbackMap map[int]transportConfigCallback,
+	numNodes uint64,
+	backendCallback func(*mockBackend, int),
+	loggerCallback func(*mockLogger, int),
+	transportCallback func(*mockTransport, int),
 ) *mockCluster {
 	if numNodes < 1 {
 		return nil
 	}
 
-	nodes := make([]*IBFT, numNodes)
-	quitChannels := make([]chan struct{}, numNodes)
-	messageHandlersQuit := make([]chan struct{}, numNodes)
+	// Initialize the backend and transport callbacks for
+	// each node in the arbitrary cluster
+	backendCallbackMap := make(map[int]backendConfigCallback)
+	loggerCallbackMap := make(map[int]loggerConfigCallback)
+	transportCallbackMap := make(map[int]transportConfigCallback)
 
-	for index := 0; index < numNodes; index++ {
+	for i := 0; i < int(numNodes); i++ {
+		i := i
+
+		if backendCallback != nil {
+			backendCallbackMap[i] = func(backend *mockBackend) {
+				backendCallback(backend, i)
+			}
+		}
+
+		if transportCallback != nil {
+			transportCallbackMap[i] = func(backend *mockTransport) {
+				transportCallback(backend, i)
+			}
+		}
+
+		if loggerCallback != nil {
+			loggerCallbackMap[i] = func(backend *mockLogger) {
+				loggerCallback(backend, i)
+			}
+		}
+	}
+
+	nodes := make([]*IBFT, numNodes)
+	nodeCtxs := make([]mockNodeContext, numNodes)
+
+	for index := 0; index < int(numNodes); index++ {
 		var (
 			logger    = &mockLogger{}
 			transport = &mockTransport{}
@@ -309,67 +383,146 @@ func newMockCluster(
 		)
 
 		// Execute set callbacks, if any
-		if backendCallbackMap != nil {
-			if backendCallback, isSet := backendCallbackMap[index]; isSet {
-				backendCallback(backend)
+		if len(backendCallbackMap) > 0 {
+			if bc, isSet := backendCallbackMap[index]; isSet {
+				bc(backend)
 			}
 		}
 
-		if loggerCallbackMap != nil {
-			if loggerCallback, isSet := loggerCallbackMap[index]; isSet {
-				loggerCallback(logger)
+		if len(loggerCallbackMap) > 0 {
+			if lc, isSet := loggerCallbackMap[index]; isSet {
+				lc(logger)
 			}
 		}
 
-		if transportCallbackMap != nil {
-			if transportCallback, isSet := transportCallbackMap[index]; isSet {
-				transportCallback(transport)
+		if len(transportCallbackMap) > 0 {
+			if tc, isSet := transportCallbackMap[index]; isSet {
+				tc(transport)
 			}
 		}
 
 		// Create a new instance of the IBFT node
-		i := NewIBFT(logger, backend, transport)
+		nodes[index] = NewIBFT(logger, backend, transport)
 
-		// Instantiate quit channels for node routines
-		quitChannels[index] = make(chan struct{})
-		messageHandlersQuit[index] = make(chan struct{})
-
-		nodes[index] = i
+		// Instantiate context for the nodes
+		nodeCtxs[index] = newMockNodeContext()
 	}
 
-	return &mockCluster{
+	cr := &mockCluster{
 		nodes: nodes,
+		ctxs:  nodeCtxs,
 	}
+
+	// Set a small timeout, because of situations
+	// where the byzantine node is the proposer
+	cr.setBaseTimeout(testRoundTimeout)
+
+	return cr
+}
+
+// mockNodeContext keeps track of the node runtime context
+type mockNodeContext struct {
+	ctx      context.Context
+	cancelFn context.CancelFunc
+}
+
+// newMockNodeContext is the constructor of mockNodeContext
+func newMockNodeContext() mockNodeContext {
+	ctx, cancelFn := context.WithCancel(context.Background())
+
+	return mockNodeContext{
+		ctx:      ctx,
+		cancelFn: cancelFn,
+	}
+}
+
+// mockNodeWg is the WaitGroup wrapper for the cluster nodes
+type mockNodeWg struct {
+	sync.WaitGroup
+	count int64
+}
+
+func (wg *mockNodeWg) Add(delta int) {
+	wg.WaitGroup.Add(delta)
+}
+
+func (wg *mockNodeWg) Done() {
+	atomic.AddInt64(&wg.count, 1)
+	wg.WaitGroup.Done()
+}
+
+func (wg *mockNodeWg) getDone() int64 {
+	return atomic.LoadInt64(&wg.count)
+}
+
+func (wg *mockNodeWg) resetDone() {
+	atomic.StoreInt64(&wg.count, 0)
 }
 
 // mockCluster represents a mock IBFT cluster
 type mockCluster struct {
-	nodes []*IBFT // references to the nodes in the cluster
+	nodes []*IBFT           // references to the nodes in the cluster
+	ctxs  []mockNodeContext // context handlers for the nodes in the cluster
 
-	wg sync.WaitGroup
+	wg mockNodeWg
 }
 
 func (m *mockCluster) runSequence(height uint64) {
-	for _, node := range m.nodes {
+	m.wg.resetDone()
+
+	for nodeIndex, node := range m.nodes {
 		m.wg.Add(1)
 
-		go func(node *IBFT, height uint64) {
-			defer func() {
-				m.wg.Done()
-			}()
-
+		go func(ctx context.Context, node *IBFT) {
 			// Start the main run loop for the node
-			node.RunSequence(context.Background(), height)
-		}(node, height)
+			node.RunSequence(ctx, height)
+
+			m.wg.Done()
+		}(m.ctxs[nodeIndex].ctx, node)
 	}
 }
 
-// stop sends a quit signal to all nodes
-// in the cluster
-func (m *mockCluster) stop() {
+// awaitCompletion waits for completion of all
+// nodes in the cluster
+func (m *mockCluster) awaitCompletion() {
 	// Wait for all main run loops to signalize
 	// that they're finished
 	m.wg.Wait()
+}
+
+// forceShutdown sends a stop signal to all running nodes
+// in the cluster, and awaits their completion
+func (m *mockCluster) forceShutdown() {
+	// Send a stop signal to all the nodes
+	for i, ctx := range m.ctxs {
+		ctx.cancelFn()
+
+		m.ctxs[i] = newMockNodeContext()
+	}
+
+	// Wait for all the nodes to finish
+	m.awaitCompletion()
+}
+
+// awaitNCompletions awaits completion of the current sequence
+// for N nodes in the cluster
+func (m *mockCluster) awaitNCompletions(
+	ctx context.Context,
+	count int64,
+) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf(
+				"await exceeded timeout for %d nodes",
+				count,
+			)
+		default:
+			if m.wg.getDone() >= count {
+				return nil
+			}
+		}
+	}
 }
 
 // pushMessage imitates a message passing service,

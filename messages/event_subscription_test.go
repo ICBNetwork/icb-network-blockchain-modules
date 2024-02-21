@@ -1,9 +1,11 @@
 package messages
 
 import (
-	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/ICBNetwork/icb-network-blockchain-modules/messages/proto"
 )
 
 func TestEventSubscription_EventSupported(t *testing.T) {
@@ -108,16 +110,6 @@ func TestEventSubscription_EventSupported(t *testing.T) {
 			false,
 		},
 		{
-			"Lower number of messages",
-			commonDetails,
-			signalDetails{
-				commonDetails.MessageType,
-				commonDetails.View,
-				commonDetails.MinNumMessages - 1,
-			},
-			false,
-		},
-		{
 			"Invalid message type",
 			commonDetails,
 			signalDetails{
@@ -167,7 +159,6 @@ func TestEventSubscription_EventSupported(t *testing.T) {
 				subscription.eventSupported(
 					event.messageType,
 					event.view,
-					event.totalMessages,
 				),
 			)
 		})
